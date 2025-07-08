@@ -1,0 +1,2 @@
+# zhenxun_plugin_nb_store
+适用于真寻的Nonebot插件商店安装插件
