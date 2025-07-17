@@ -1,3 +1,4 @@
+import contextlib
 import csv
 import html.parser
 import io
@@ -28,9 +29,10 @@ class SimpleIndexParser(html.parser.HTMLParser):
             self._current_href = dict(attrs).get("href")
 
     def handle_data(self, data):
-        if self._current_tag == "a" and self._current_href:
-            if data.lower().endswith(".whl"):
-                self.links.append(self._current_href)
+        if data.lower().endswith(".whl") and (
+            self._current_tag == "a" and self._current_href
+        ):
+            self.links.append(self._current_href)
 
     def handle_endtag(self, tag):
         if tag == "a":
@@ -91,8 +93,7 @@ async def get_record_files(zf):
     records = []
     for line in record_data.decode("utf-8").splitlines():
         reader = csv.reader([line])
-        row = next(reader)
-        if row:
+        if row := next(reader):
             records.append(row[0])
     return records
 
@@ -128,7 +129,7 @@ async def extract_code_from_record(zf, dest_dir: Path):
     for file in code_files:
         data = await zip_read(zf, file)
         dest_path = dest_dir / file
-        await path_mkdir(dest_dir.parent)
+        await path_mkdir(dest_path.parent)
         f = await run_sync(open)(dest_path, "wb")
         try:
             await run_sync(f.write)(data)
@@ -139,19 +140,16 @@ async def extract_code_from_record(zf, dest_dir: Path):
 
 @run_sync
 def get_pip_index_url() -> str:
-    try:
+    with contextlib.suppress(Exception):
         result = subprocess.run(
             [sys.executable, "-m", "pip", "config", "get", "global.index-url"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        url = result.stdout.strip()
-        if url:
+        if url := result.stdout.strip():
             return url
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         result = subprocess.run(
             [sys.executable, "-m", "pip", "config", "list"],
             capture_output=True,
@@ -161,8 +159,6 @@ def get_pip_index_url() -> str:
         for line in result.stdout.splitlines():
             if "index-url" in line:
                 return line.split("=", 1)[-1].strip()
-    except Exception:
-        pass
     return "https://pypi.org/simple"
 
 

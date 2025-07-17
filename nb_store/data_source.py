@@ -222,7 +222,11 @@ class StoreManager:
             plugin_key = await cls._get_module_by_pypi_id_name(plugin_id)
         except ValueError as e:
             return str(e)
-        plugin_info = next(p for p in plugin_list if p.module_name == plugin_key)
+        plugin_info = next(
+            (p for p in plugin_list if p.module_name == plugin_key), None
+        )
+        if not plugin_info:
+            return f"插件 {plugin_key} 不存在"
         path = PLUGIN_FLODER / plugin_info.module_name
         if not path.exists():
             return f"插件 {plugin_info.name} 不存在..."
@@ -289,7 +293,11 @@ class StoreManager:
             plugin_key = await cls._get_module_by_pypi_id_name(plugin_id)
         except ValueError as e:
             return str(e)
-        plugin_info = next(p for p in plugin_list if p.module_name == plugin_key)
+        plugin_info = next(
+            (p for p in plugin_list if p.module_name == plugin_key), None
+        )
+        if not plugin_info:
+            return f"插件 {plugin_key} 不存在"
         logger.info(f"尝试更新插件 {plugin_info.name}", LOG_COMMAND)
         db_plugin_list = await cls.get_loaded_plugins("module", "version")
         suc_plugin = {p[0]: (p[1] or "Unknown") for p in db_plugin_list}
@@ -389,6 +397,6 @@ class StoreManager:
         elif isinstance(plugin_id, str):
             """检查包名或名称匹配"""
             for p in plugin_list:
-                if plugin_id == p.project_link or plugin_id == p.name:
+                if plugin_id in [p.project_link, p.name]:
                     return p.module_name
             raise ValueError("插件 包名 / 名称 不存在...")
