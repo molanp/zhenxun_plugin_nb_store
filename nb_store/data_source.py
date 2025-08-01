@@ -87,7 +87,13 @@ class StoreManager:
         response = await AsyncHttpx.get(PLUGIN_INDEX, check_status_code=200)
         if response.status_code == 200:
             logger.info("获取nb插件列表成功", LOG_COMMAND)
-            return [StorePluginInfo(**detail) for detail in json.loads(response.text)]
+            data = []
+            data.extend(
+                StorePluginInfo(**detail)
+                for detail in json.loads(response.text)
+                if detail.get("type") != "library"
+            )
+            return data
         else:
             logger.warning(f"获取nb插件列表失败: {response.status_code}", LOG_COMMAND)
         return []
