@@ -15,7 +15,7 @@ __plugin_meta__ = PluginMetadata(
     name="Nonebot插件商店",
     description="Nonebot插件商店",
     usage="""
-    nb插件商店 ?页码 ?每页项数        : 查看当前的nonebot 插件商店
+    nb商店 ?页码 ?每页项数        : 查看当前的nonebot 插件商店
     添加nb插件 id/name/pypi_name     : 添加nonebot 市场插件
     移除nb插件 id/name/pypi_name     : 移除nonebot 市场插件
     搜索nb插件 <任意关键字>     : 搜索nonebot 市场插件
