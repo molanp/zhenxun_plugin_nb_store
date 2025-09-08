@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import csv
 import html.parser
@@ -10,6 +11,7 @@ from urllib.parse import urljoin
 import zipfile
 
 from nonebot.utils import run_sync
+from nonebot_plugin_alconna import UniMessage
 from packaging.requirements import Requirement
 from packaging.version import parse as parse_version
 
@@ -138,10 +140,10 @@ async def extract_code_from_record(zf, dest_dir: Path):
     return code_files
 
 
-@run_sync
-def get_pip_index_url() -> str:
+async def get_pip_index_url() -> str:
     with contextlib.suppress(Exception):
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             [sys.executable, "-m", "pip", "config", "get", "global.index-url"],
             capture_output=True,
             text=True,
@@ -150,7 +152,8 @@ def get_pip_index_url() -> str:
         if url := result.stdout.strip():
             return url
     with contextlib.suppress(Exception):
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             [sys.executable, "-m", "pip", "config", "list"],
             capture_output=True,
             text=True,
@@ -163,7 +166,7 @@ def get_pip_index_url() -> str:
 
 
 async def get_latest_whl_url_from_simple(package: str, index_url: str) -> str | None:
-    url = index_url.rstrip("/") + f"/{package.replace('_', '-').lower()}/"
+    url = urljoin(index_url, package.replace("_", "-").lower())
     html = await AsyncHttpx.get(url, timeout=10, headers={"User-Agent": "pip"})
     parser = SimpleIndexParser()
     parser.feed(html.text)
@@ -185,6 +188,8 @@ async def get_whl_download_url(package: str) -> str | None:
     """
 
     index_url = await get_pip_index_url()
+    if "pypi.tuna.tsinghua.edu.cn" in index_url:
+        await UniMessage("你正在使用清华大学镜像源，可能会导致 403 问题").send()
     return await get_latest_whl_url_from_simple(package, index_url)
 
 
