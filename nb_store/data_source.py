@@ -68,9 +68,8 @@ def row_style(column: str, text: str) -> RowStyle:
     return style
 
 
-@run_sync
-def install_requirement(path: Path):
-    return VirtualEnvPackageManager.install_requirement(path)
+async def install_requirement(path: Path):
+    return await VirtualEnvPackageManager.install_requirement(path)
 
 
 class StoreManager:
