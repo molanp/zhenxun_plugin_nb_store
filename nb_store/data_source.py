@@ -3,7 +3,6 @@ from pathlib import Path
 
 from aiocache import cached
 import aiofiles
-from nonebot.utils import run_sync
 import ujson as json
 
 from zhenxun.models.plugin_info import PluginInfo
@@ -28,25 +27,65 @@ def sort_plugins_by(
     )
 
 
+async def inject_botpy():
+    file_path = Path() / "bot.py"
+    async with aiofiles.open(file_path, encoding="utf-8") as f:
+        lines = await f.readlines()
+
+    # 检查是否已存在目标代码
+    target_line = 'nonebot.load_plugins("nonebot_plugins")'
+    if any(target_line in line for line in lines):
+        logger.debug("已存在目标代码(加载注入)，跳过", LOG_COMMAND)
+        return
+
+    # 找到最后一个 load_plugins 调用的位置
+    last_index = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith("nonebot.load_plugins("):
+            last_index = i
+
+    if last_index == -1:
+        logger.warning(
+            "未找到 `nonebot.load_plugins` 调用，无法注入插件加载", LOG_COMMAND
+        )
+        return
+
+    # 保持相同缩进
+    indent = " " * (len(lines[last_index]) - len(lines[last_index].lstrip()))
+    new_line = f'{indent}nonebot.load_plugins("nonebot_plugins")\n'
+
+    # 插入新行
+    lines.insert(last_index + 1, new_line)
+
+    async with aiofiles.open(file_path, mode="w", encoding="utf-8") as f:
+        await f.writelines(lines)
+    logger.info("Nonebot插件加载注入成功", LOG_COMMAND)
+
+
 async def common_install_plugin(plugin_info: StorePluginInfo, rm_exists: bool = False):
     """通用插件安装流程"""
+    await inject_botpy()
     down_url = await get_whl_download_url(plugin_info.project_link)
     if not down_url:
         raise FileNotFoundError(f"插件 {plugin_info.name} 未找到安装包...")
+    if plugin_obj := await PluginInfo.get_plugin(module=plugin_info.module_name):
+        target_path = Path(plugin_obj.module_path.replace(".", "/").lstrip("/"))
+    else:
+        target_path = PLUGIN_FLODER / plugin_info.module_name
     if rm_exists:
-        await path_rm(PLUGIN_FLODER / plugin_info.module_name)
-    await path_mkdir(PLUGIN_FLODER / plugin_info.module_name)
+        await path_rm(target_path)
+    await path_mkdir(target_path / plugin_info.module_name)
     whl_data = await AsyncHttpx.get(down_url)
-    deps = await copy2_return_deps(whl_data.content, PLUGIN_FLODER)
+    deps = await copy2_return_deps(whl_data.content, target_path)
     async with aiofiles.open(
-        PLUGIN_FLODER / plugin_info.module_name / "requirements.txt",
+        target_path / plugin_info.module_name / "requirements.txt",
         "w",
         encoding="utf-8",
     ) as f:
         for dep in deps:
             await f.write(dep + "\n")
     await install_requirement(
-        PLUGIN_FLODER / plugin_info.module_name / "requirements.txt"
+        target_path / plugin_info.module_name / "requirements.txt"
     )
 
 

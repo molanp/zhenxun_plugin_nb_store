@@ -150,6 +150,8 @@ async def get_pip_index_url() -> str:
             timeout=5,
         )
         if url := result.stdout.strip():
+            if not url.endswith("/"):
+                url += "/"
             return url
     with contextlib.suppress(Exception):
         result = await asyncio.to_thread(
@@ -162,11 +164,13 @@ async def get_pip_index_url() -> str:
         for line in result.stdout.splitlines():
             if "index-url" in line:
                 return line.split("=", 1)[-1].strip()
-    return "https://pypi.org/simple"
+    return "https://pypi.org/simple/"
 
 
 async def get_latest_whl_url_from_simple(package: str, index_url: str) -> str | None:
     url = urljoin(index_url, package.replace("_", "-").lower())
+    if not url.endswith("/"):
+        url += "/"
     html = await AsyncHttpx.get(url, timeout=10, headers={"User-Agent": "pip"})
     parser = SimpleIndexParser()
     parser.feed(html.text)
