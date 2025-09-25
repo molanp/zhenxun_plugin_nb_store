@@ -74,18 +74,18 @@ async def common_install_plugin(plugin_info: StorePluginInfo, rm_exists: bool = 
         target_path = PLUGIN_FLODER / plugin_info.module_name
     if rm_exists:
         await path_rm(target_path)
-    await path_mkdir(target_path / plugin_info.module_name)
+    await path_mkdir(target_path)
     whl_data = await AsyncHttpx.get(down_url)
     deps = await copy2_return_deps(whl_data.content, target_path)
     async with aiofiles.open(
-        target_path / plugin_info.module_name / "requirements.txt",
+        target_path / "requirements.txt",
         "w",
         encoding="utf-8",
     ) as f:
         for dep in deps:
             await f.write(dep + "\n")
     await install_requirement(
-        target_path / plugin_info.module_name / "requirements.txt"
+        target_path / "requirements.txt"
     )
 
 

@@ -15,7 +15,10 @@ from nonebot_plugin_alconna import UniMessage
 from packaging.requirements import Requirement
 from packaging.version import parse as parse_version
 
+from zhenxun.services.log import logger
 from zhenxun.utils.http_utils import AsyncHttpx
+
+from .config import LOG_COMMAND
 
 
 class SimpleIndexParser(html.parser.HTMLParser):
@@ -197,6 +200,44 @@ async def get_whl_download_url(package: str) -> str | None:
     return await get_latest_whl_url_from_simple(package, index_url)
 
 
+@run_sync
+def move_contents_up_one_level(target_dir: Path) -> None:
+    """
+    将目标目录中的所有文件和子目录移动到其父目录
+
+    参数:
+        :target_dir Path: 要处理的目标目录
+    """
+    if not target_dir.is_dir():
+        raise ValueError(f"{target_dir} 不是有效的目录")
+
+    parent_dir = target_dir.parent
+
+    # 移动所有文件和子目录
+    for item in target_dir.iterdir():
+        dest_path = parent_dir / item.name
+
+        # 处理目标路径已存在的情况
+        if dest_path.exists():
+            if dest_path.is_dir() and item.is_dir():
+                # 合并目录（将内容复制到已有目录）
+                for sub_item in item.iterdir():
+                    shutil.move(str(sub_item), str(dest_path))
+                shutil.rmtree(item)
+            else:
+                # 覆盖已有文件
+                if dest_path.is_file():
+                    dest_path.unlink()
+                shutil.move(str(item), str(dest_path))
+        else:
+            # 直接移动
+            shutil.move(str(item), str(parent_dir))
+
+    # 可选：删除现在为空的原始目录
+    if not any(target_dir.iterdir()):
+        target_dir.rmdir()
+
+
 async def copy2_return_deps(whl_bytes: bytes, dest_path: Path) -> list[str]:
     """
     提取whl文件中的代码文件夹复制到指定目录，并返回依赖列表
@@ -215,4 +256,7 @@ async def copy2_return_deps(whl_bytes: bytes, dest_path: Path) -> list[str]:
         deps = await get_dependencies_from_metadata(zf)
     finally:
         await run_sync(zf.close)()
+    if not (dest_path / "__init__.py").exists():
+        logger.warning(f"{dest_path} 不是一个有效的插件目录，正在修复...", LOG_COMMAND)
+        await move_contents_up_one_level(dest_path)
     return deps
