@@ -84,9 +84,7 @@ async def common_install_plugin(plugin_info: StorePluginInfo, rm_exists: bool = 
     ) as f:
         for dep in deps:
             await f.write(dep + "\n")
-    await install_requirement(
-        target_path / "requirements.txt"
-    )
+    await install_requirement(target_path / "requirements.txt")
 
 
 def row_style(column: str, text: str) -> RowStyle:
@@ -400,7 +398,7 @@ class StoreManager:
                     f"正在更新插件 {plugin_info.name}({plugin_info.module_name})",
                     LOG_COMMAND,
                 )
-                await common_install_plugin(plugin_info)
+                await common_install_plugin(plugin_info, True)
                 update_success_list.append(plugin_info.name)
             except Exception as e:
                 logger.error(
