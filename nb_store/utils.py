@@ -297,11 +297,12 @@ async def copy2(whl_bytes: bytes, target_path: Path) -> None:
 
 async def init_ver_data():
     global PLUGIN_VER_DATA
-    if not PLUGIN_VER_DATA and (DATA_PATH / "plugin_ver.json").exists():
-        async with PLUGIN_VER_LOCK:
+    async with PLUGIN_VER_LOCK:
+        # Double-check under lock to avoid redundant I/O under concurrency
+        if not PLUGIN_VER_DATA and (DATA_PATH / "plugin_ver.json").exists():
             async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
                 PLUGIN_VER_DATA = ujson.loads(await f.read())
-    return PLUGIN_VER_DATA
+        return PLUGIN_VER_DATA
 
 
 class Plugin:
