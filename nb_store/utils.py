@@ -86,8 +86,18 @@ def path_mkdir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
 
 
-def path_rm(path: Path):
-    shutil.rmtree(path)
+def path_rm(path: Path) -> None:
+    """
+    删除目录或文件。如果路径不存在则静默返回
+    """
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+    except FileNotFoundError:
+        # 忽略路径不存在的情况
+        return
 
 
 async def get_record_files(zf: zipfile.ZipFile):
@@ -254,34 +264,33 @@ def move_contents_up_one_level(target_dir: Path) -> None:
         target_dir.rmdir()
 
 
-async def copy2(whl_bytes: bytes, dest_path: Path):
+async def copy2(whl_bytes: bytes, target_path: Path) -> None:
     """
-    提取whl文件中的代码文件夹复制到指定目录
+    将 wheel/zip 内容解压到 target_path，并在 target_path 中写入 requirements.txt
+      - 解压文件内容到 target_path
+      - 如果包内有 requirements 文件将其写入 target_path/requirements.txt
 
-    参数:
-        :whl_bytes: whl文件的字节流
-        :dest_dir: 目标目录
-
-    返回:
-        :list: 依赖列表
     """
-    path_mkdir(dest_path)
+    path_mkdir(target_path)
     zf = await open_zip(whl_bytes)
     try:
-        await extract_code_from_whl(zf, dest_path)
+        await extract_code_from_whl(zf, target_path)
         deps = await get_dependencies_from_metadata(zf)
     finally:
         await run_sync(zf.close)()
-    if not (dest_path / "__init__.py").exists():
-        logger.warning(f"{dest_path} 不是一个有效的插件目录，正在修复...", LOG_COMMAND)
-        await move_contents_up_one_level(dest_path)
-    async with aiofiles.open(
-        dest_path / "requirements.txt",
-        "w",
-        encoding="utf-8",
-    ) as f:
-        for dep in deps:
-            await f.write(dep + "\n")
+    if not (target_path / "__init__.py").exists():
+        logger.warning(
+            f"{target_path} 不是一个有效的插件目录，正在修复...", LOG_COMMAND
+        )
+        await move_contents_up_one_level(target_path)
+    if deps:
+        async with aiofiles.open(
+            target_path / "requirements.txt",
+            "w",
+            encoding="utf-8",
+        ) as f:
+            for dep in deps:
+                await f.write(dep + "\n")
 
 
 class Plugin:
@@ -299,8 +308,12 @@ class Plugin:
         """获取插件的本地版本号"""
         global PLUGIN_VER_DATA
         if not PLUGIN_VER_DATA:
-            async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
-                PLUGIN_VER_DATA = ujson.loads(await f.read())
+            try:
+                async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
+                    PLUGIN_VER_DATA = ujson.loads(await f.read())
+            except Exception:
+                PLUGIN_VER_DATA = {}
+                await self.write()
         return PLUGIN_VER_DATA.get(self.pkg_name, "?")
 
     async def set_local_ver(self, ver: str):
@@ -316,5 +329,7 @@ class Plugin:
         await self.write()
 
     async def write(self):
-        async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
+        async with aiofiles.open(
+            DATA_PATH / "plugin_ver.json", "w", encoding="utf-8"
+        ) as f:
             await f.write(ujson.dumps(PLUGIN_VER_DATA))

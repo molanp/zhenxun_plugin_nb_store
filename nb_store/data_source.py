@@ -103,7 +103,7 @@ async def install_requirement(path: Path):
 
 
 class StoreManager:
-    suc_plugin: dict[str, str] | None = None
+    suc_plugin: list[str] | None = None
 
     @classmethod
     async def get_plugins_by_page(
@@ -124,15 +124,13 @@ class StoreManager:
                 or query.lower() in plugin_info.desc.lower()
             ]
         if not cls.suc_plugin:
-            db_plugin_list = await cls.get_loaded_plugins("module", "version")
-            cls.suc_plugin = {p[0]: (p[1] or "?") for p in db_plugin_list}
+            cls.suc_plugin = await cls.get_loaded_plugins()
         plugins = sort_plugins_by(plugins, order_by)
         if only_show_update:
             plugins = [
                 plugin
                 for plugin in plugins
-                if plugin.module_name in cls.suc_plugin
-                and not await Plugin(plugin).is_latest()
+                if not await Plugin(plugin).is_latest()
             ]
         total = math.ceil(len(plugins) / page_size)
         if not 0 < page <= total:
@@ -176,7 +174,7 @@ class StoreManager:
 
     @classmethod
     async def version_check(
-        cls, plugin_info: StorePluginInfo, suc_plugin: dict[str, str]
+        cls, plugin_info: StorePluginInfo, suc_plugin: list[str]
     ):
         """版本检查
 
@@ -189,19 +187,28 @@ class StoreManager:
         """
         module = plugin_info.module_name
         local_ver = await Plugin(plugin_info).get_local_ver()
-        if suc_plugin.get(module) and plugin_info.version != local_ver:
-            return f"{suc_plugin[module]} (有更新: {local_ver}->{plugin_info.version})"
+        if module in suc_plugin and plugin_info.version != local_ver:
+            return f"{module} (有更新: {local_ver}->{plugin_info.version})"
         return plugin_info.version
 
+
     @classmethod
-    async def get_loaded_plugins(cls, *args) -> list[tuple[str, str]]:
-        """获取已加载的插件
+    async def get_loaded_plugins(cls) -> list[str]:
+        """获取已加载的NB商店插件
 
         返回:
-            list[str]: 已加载的插件
+            list[str]: 已加载的NB商店插件
         """
-        return await PluginInfo.filter(load_status=True).values_list(*args)
+        loaded_plugins = await PluginInfo.filter(load_status=True).values_list("module")
+        nb_plugins = await cls.get_data()
 
+        # 过滤只保留 nb 商店中存在的插件
+        nb_plugin_names = {plugin.module_name for plugin in nb_plugins}
+        return [
+            plugin[0]
+            for plugin in loaded_plugins
+            if plugin[0] in nb_plugin_names
+        ]
     @classmethod
     async def render_plugins_list(
         cls,
@@ -219,8 +226,7 @@ class StoreManager:
             "上次更新时间",
         ]
         if not cls.suc_plugin:
-            db_plugin_list = await cls.get_loaded_plugins("module", "version")
-            cls.suc_plugin = {p[0]: (p[1] or "?") for p in db_plugin_list}
+            cls.suc_plugin = await cls.get_loaded_plugins()
         data_list = [
             [
                 "已安装" if plugin_info.module_name in cls.suc_plugin else "",
@@ -267,8 +273,7 @@ class StoreManager:
         except ValueError as e:
             return str(e)
         if not cls.suc_plugin:
-            db_plugin_list = await cls.get_loaded_plugins("module", "version")
-            cls.suc_plugin = {p[0]: (p[1] or "?") for p in db_plugin_list}
+            cls.suc_plugin = await cls.get_loaded_plugins()
         plugin_info = next(
             (p for p in plugin_list if p.module_name == plugin_key), None
         )
@@ -329,11 +334,11 @@ class StoreManager:
         if not plugin_info:
             return f"插件 {plugin_key} 不存在"
         logger.info(f"尝试更新插件 {plugin_info.name}", LOG_COMMAND)
-        db_plugin_list = await cls.get_loaded_plugins("module", "version")
-        suc_plugin = {p[0]: (p[1] or "Unknown") for p in db_plugin_list}
-        if plugin_info.module_name not in [p[0] for p in db_plugin_list]:
+        if not cls.suc_plugin:
+            cls.suc_plugin = await cls.get_loaded_plugins()
+        if plugin_info.module_name not in cls.suc_plugin:
             return f"插件 {plugin_info.name} 未安装，无法更新"
-        logger.debug(f"当前插件列表: {suc_plugin}", LOG_COMMAND)
+        logger.debug(f"当前NB商店插件列表: {cls.suc_plugin}", LOG_COMMAND)
         if await Plugin(plugin_info).is_latest():
             return f"插件 {plugin_info.name} 已是最新版本"
         await common_install_plugin(plugin_info)
@@ -354,12 +359,12 @@ class StoreManager:
         update_failed_list = []
         update_success_list = []
         result = "--已更新{}个插件 {}个失败 {}个成功--"
-        db_plugin_list = await cls.get_loaded_plugins("module", "version")
-        suc_plugin = {p[0]: (p[1] or "Unknown") for p in db_plugin_list}
+        if not cls.suc_plugin:
+            cls.suc_plugin = await cls.get_loaded_plugins()
         logger.debug(f"尝试更新全部插件 {plugin_name_list}", LOG_COMMAND)
         for plugin_info in plugin_list:
             try:
-                if plugin_info.module_name not in suc_plugin:
+                if plugin_info.module_name not in cls.suc_plugin:
                     logger.debug(
                         f"插件 {plugin_info.name}({plugin_info.module_name}) 未安装"
                         "，跳过",
