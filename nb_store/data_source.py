@@ -3,7 +3,7 @@ from pathlib import Path
 
 from aiocache import cached
 import aiofiles
-import ujson as json
+import ujson
 
 from zhenxun.models.plugin_info import PluginInfo
 from zhenxun.services.log import logger
@@ -13,7 +13,7 @@ from zhenxun.utils.manager.virtual_env_package_manager import VirtualEnvPackageM
 
 from .config import LOG_COMMAND, PLUGIN_FLODER, PLUGIN_INDEX
 from .models import StorePluginInfo
-from .utils import copy2_return_deps, get_whl_download_url, path_mkdir, path_rm
+from .utils import Plugin, copy2, get_whl_download_url, path_mkdir, path_rm
 
 
 def sort_plugins_by(
@@ -62,7 +62,7 @@ async def inject_botpy():
     logger.info("Nonebot插件加载注入成功", LOG_COMMAND)
 
 
-async def common_install_plugin(plugin_info: StorePluginInfo, rm_exists: bool = False):
+async def common_install_plugin(plugin_info: StorePluginInfo):
     """通用插件安装流程"""
     await inject_botpy()
     down_url = await get_whl_download_url(plugin_info.project_link)
@@ -72,18 +72,11 @@ async def common_install_plugin(plugin_info: StorePluginInfo, rm_exists: bool = 
         target_path = Path(plugin_obj.module_path.replace(".", "/").lstrip("/"))
     else:
         target_path = PLUGIN_FLODER / plugin_info.module_name
-    if rm_exists:
-        await path_rm(target_path)
-    await path_mkdir(target_path)
+    path_rm(target_path)
+    path_mkdir(target_path)
     whl_data = await AsyncHttpx.get(down_url)
-    deps = await copy2_return_deps(whl_data.content, target_path)
-    async with aiofiles.open(
-        target_path / "requirements.txt",
-        "w",
-        encoding="utf-8",
-    ) as f:
-        for dep in deps:
-            await f.write(dep + "\n")
+    await copy2(whl_data.content, target_path)
+    await Plugin(plugin_info).set_local_ver(plugin_info.version)
     await install_requirement(target_path / "requirements.txt")
 
 
@@ -118,7 +111,7 @@ class StoreManager:
         page: int = 1,
         page_size: int = 50,
         order_by: str = "time",
-        only_show_update=False,
+        only_show_update: bool = False,
         query: str = "",
     ) -> BuildImage | str:
         plugins: list[StorePluginInfo] = await cls.get_data()
@@ -139,7 +132,7 @@ class StoreManager:
                 plugin
                 for plugin in plugins
                 if plugin.module_name in cls.suc_plugin
-                and not cls.check_version_is_new(plugin, cls.suc_plugin)
+                and not await Plugin(plugin).is_latest()
             ]
         total = math.ceil(len(plugins) / page_size)
         if not 0 < page <= total:
@@ -163,7 +156,7 @@ class StoreManager:
             data = []
             data.extend(
                 StorePluginInfo(**detail)
-                for detail in json.loads(response.text)
+                for detail in ujson.loads(response.text)
                 if detail.get("type") != "library"
             )
             return data
@@ -182,7 +175,9 @@ class StoreManager:
         return await cls.get_nb_plugins()
 
     @classmethod
-    def version_check(cls, plugin_info: StorePluginInfo, suc_plugin: dict[str, str]):
+    async def version_check(
+        cls, plugin_info: StorePluginInfo, suc_plugin: dict[str, str]
+    ):
         """版本检查
 
         参数:
@@ -193,27 +188,10 @@ class StoreManager:
             str: 版本号
         """
         module = plugin_info.module_name
-        if suc_plugin.get(module) and not cls.check_version_is_new(
-            plugin_info, suc_plugin
-        ):
-            return f"{suc_plugin[module]} (有更新->{plugin_info.version})"
+        local_ver = await Plugin(plugin_info).get_local_ver()
+        if suc_plugin.get(module) and plugin_info.version != local_ver:
+            return f"{suc_plugin[module]} (有更新: {local_ver}->{plugin_info.version})"
         return plugin_info.version
-
-    @classmethod
-    def check_version_is_new(
-        cls, plugin_info: StorePluginInfo, suc_plugin: dict[str, str]
-    ):
-        """检查版本是否是最新
-
-        参数:
-            plugin_info: StorePluginInfo
-            suc_plugin: 模块名: 版本号
-
-        返回:
-            bool: 是否是最新
-        """
-        module = plugin_info.module_name
-        return suc_plugin.get(module) and plugin_info.version == suc_plugin[module]
 
     @classmethod
     async def get_loaded_plugins(cls, *args) -> list[tuple[str, str]]:
@@ -251,7 +229,7 @@ class StoreManager:
                 plugin_info.name,
                 plugin_info.desc,
                 plugin_info.author,
-                cls.version_check(plugin_info, cls.suc_plugin),
+                await cls.version_check(plugin_info, cls.suc_plugin),
                 plugin_info.time,
             ]
             for plugin_info in plugin_list
@@ -326,7 +304,8 @@ class StoreManager:
         if not path.exists():
             return f"插件 {plugin_info.name} 不存在..."
         logger.debug(f"尝试移除插件 {plugin_info.name} 文件: {path}", LOG_COMMAND)
-        await path_rm(path)
+        path_rm(path)
+        await Plugin(plugin_info).remove_local_ver()
         return f"插件 {plugin_info.name} 移除成功! 重启后生效"
 
     @classmethod
@@ -355,9 +334,9 @@ class StoreManager:
         if plugin_info.module_name not in [p[0] for p in db_plugin_list]:
             return f"插件 {plugin_info.name} 未安装，无法更新"
         logger.debug(f"当前插件列表: {suc_plugin}", LOG_COMMAND)
-        if cls.check_version_is_new(plugin_info, suc_plugin):
+        if await Plugin(plugin_info).is_latest():
             return f"插件 {plugin_info.name} 已是最新版本"
-        await common_install_plugin(plugin_info, True)
+        await common_install_plugin(plugin_info)
         return f"插件 {plugin_info.name} 更新成功! 重启后生效"
 
     @classmethod
@@ -387,7 +366,7 @@ class StoreManager:
                         LOG_COMMAND,
                     )
                     continue
-                if cls.check_version_is_new(plugin_info, suc_plugin):
+                if await Plugin(plugin_info).is_latest():
                     logger.debug(
                         f"插件 {plugin_info.name}({plugin_info.module_name}) "
                         "已是最新版本，跳过",
@@ -398,7 +377,7 @@ class StoreManager:
                     f"正在更新插件 {plugin_info.name}({plugin_info.module_name})",
                     LOG_COMMAND,
                 )
-                await common_install_plugin(plugin_info, True)
+                await common_install_plugin(plugin_info)
                 update_success_list.append(plugin_info.name)
             except Exception as e:
                 logger.error(
