@@ -181,6 +181,8 @@ async def get_pip_index_url() -> str:
 
 async def get_latest_whl_url_from_simple(package: str, index_url: str) -> str | None:
     """从索引地址中获取最新的whl文件的下载地址"""
+    if not index_url.endswith("/"):
+        index_url += "/"
     url = urljoin(index_url, package.replace("_", "-").lower())
     if not url.endswith("/"):
         url += "/"
