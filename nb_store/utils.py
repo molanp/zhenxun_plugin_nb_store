@@ -86,7 +86,7 @@ def zip_read(zf: zipfile.ZipFile, filename: str):
 def path_mkdir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
 
-
+@run_sync
 def path_rm(path: Path) -> None:
     """
     删除目录或文件。如果路径不存在则静默返回

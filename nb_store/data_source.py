@@ -79,7 +79,7 @@ async def common_install_plugin(plugin_info: StorePluginInfo):
         target_path = Path(plugin_obj.module_path.replace(".", "/").lstrip("/"))
     else:
         target_path = PLUGIN_FLODER / plugin_info.module_name
-    path_rm(target_path)
+    await path_rm(target_path)
     path_mkdir(target_path)
     whl_data = await AsyncHttpx.get(down_url)
     await copy2(whl_data.content, target_path)
@@ -325,7 +325,7 @@ class StoreManager:
         if not path.exists():
             return f"插件 {plugin_info.name} 不存在..."
         logger.debug(f"尝试移除插件 {plugin_info.name} 文件: {path}", LOG_COMMAND)
-        path_rm(path)
+        await path_rm(path)
         await Plugin(plugin_info).remove_local_ver()
         return f"插件 {plugin_info.name} 移除成功! 重启后生效"
 
