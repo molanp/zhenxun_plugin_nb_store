@@ -27,6 +27,7 @@ DATA_PATH = DATA_PATH / "nb_store"
 DATA_PATH.mkdir(parents=True, exist_ok=True)
 
 PLUGIN_VER_DATA: dict[str, str] = {}
+PLUGIN_VER_LOCK = asyncio.Lock()
 
 
 class SimpleIndexParser(html.parser.HTMLParser):
@@ -316,14 +317,16 @@ class Plugin:
     async def set_local_ver(self, ver: str):
         """设置插件的本地号版本"""
         global PLUGIN_VER_DATA
-        PLUGIN_VER_DATA[self.pkg_name] = ver
-        await self.write()
+        async with PLUGIN_VER_LOCK:
+            PLUGIN_VER_DATA[self.pkg_name] = ver
+            await self.write()
 
     async def remove_local_ver(self):
         """移除插件的本地版本号"""
         global PLUGIN_VER_DATA
-        PLUGIN_VER_DATA.pop(self.pkg_name, None)
-        await self.write()
+        async with PLUGIN_VER_LOCK:
+            PLUGIN_VER_DATA.pop(self.pkg_name, None)
+            await self.write()
 
     async def write(self):
         async with aiofiles.open(
