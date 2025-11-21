@@ -312,9 +312,9 @@ class Plugin:
         self.ver = plugin_info.version
         """插件最新版本号"""
 
-    def get_local_ver(self) -> str:
+    def get_local_ver(self) -> str | None:
         """获取插件的本地版本号"""
-        return PLUGIN_VER_DATA.get(self.pkg_name, "?")
+        return PLUGIN_VER_DATA.get(self.pkg_name)
 
     async def set_local_ver(self, ver: str):
         """设置插件的本地号版本"""

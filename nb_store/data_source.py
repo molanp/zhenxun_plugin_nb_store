@@ -79,9 +79,9 @@ async def common_install_plugin(plugin_info: StorePluginInfo):
         target_path = Path(plugin_obj.module_path.replace(".", "/").lstrip("/"))
     else:
         target_path = PLUGIN_FLODER / plugin_info.module_name
+    whl_data = await AsyncHttpx.get(down_url)
     await path_rm(target_path)
     path_mkdir(target_path)
-    whl_data = await AsyncHttpx.get(down_url)
     await copy2(whl_data.content, target_path)
     await Plugin(plugin_info).set_local_ver(plugin_info.version)
     await install_requirement(target_path / "requirements.txt")
