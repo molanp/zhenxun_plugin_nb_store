@@ -16,14 +16,14 @@ from packaging.requirements import Requirement
 from packaging.version import parse as parse_version
 import ujson
 
-from zhenxun.configs.path_config import DATA_PATH
+from zhenxun.configs.path_config import DATA_PATH as BASE_PATH
 from zhenxun.services.log import logger
 from zhenxun.utils.http_utils import AsyncHttpx
 
 from .config import LOG_COMMAND
 from .models import StorePluginInfo
 
-DATA_PATH = DATA_PATH / "nb_store"
+DATA_PATH = BASE_PATH / "nb_store"
 DATA_PATH.mkdir(parents=True, exist_ok=True)
 
 PLUGIN_VER_DATA: dict[str, str] = {}
@@ -85,6 +85,7 @@ def zip_read(zf: zipfile.ZipFile, filename: str):
 
 def path_mkdir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
+
 
 @run_sync
 def path_rm(path: Path) -> None:
@@ -297,8 +298,9 @@ async def copy2(whl_bytes: bytes, target_path: Path) -> None:
 async def init_ver_data():
     global PLUGIN_VER_DATA
     if not PLUGIN_VER_DATA and (DATA_PATH / "plugin_ver.json").exists():
-        async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
-            PLUGIN_VER_DATA = ujson.loads(await f.read())
+        async with PLUGIN_VER_LOCK:
+            async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
+                PLUGIN_VER_DATA = ujson.loads(await f.read())
     return PLUGIN_VER_DATA
 
 
@@ -332,4 +334,4 @@ class Plugin:
         async with aiofiles.open(
             DATA_PATH / "plugin_ver.json", "w", encoding="utf-8"
         ) as f:
-            await f.write(ujson.dumps(PLUGIN_VER_DATA))
+            await f.write(ujson.dumps(PLUGIN_VER_DATA, ensure_ascii=False, indent=2))
