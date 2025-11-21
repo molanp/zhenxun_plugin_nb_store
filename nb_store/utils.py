@@ -293,6 +293,14 @@ async def copy2(whl_bytes: bytes, target_path: Path) -> None:
                 await f.write(dep + "\n")
 
 
+async def init_ver_data():
+    global PLUGIN_VER_DATA
+    if not PLUGIN_VER_DATA and (DATA_PATH / "plugin_ver.json").exists():
+        async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
+            PLUGIN_VER_DATA = ujson.loads(await f.read())
+    return PLUGIN_VER_DATA
+
+
 class Plugin:
     """插件信息操作类"""
 
@@ -301,19 +309,8 @@ class Plugin:
         self.ver = plugin_info.version
         """插件最新版本号"""
 
-    async def is_latest(self) -> bool:
-        return self.ver == await self.get_local_ver()
-
     async def get_local_ver(self) -> str:
         """获取插件的本地版本号"""
-        global PLUGIN_VER_DATA
-        if not PLUGIN_VER_DATA:
-            try:
-                async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
-                    PLUGIN_VER_DATA = ujson.loads(await f.read())
-            except Exception:
-                PLUGIN_VER_DATA = {}
-                await self.write()
         return PLUGIN_VER_DATA.get(self.pkg_name, "?")
 
     async def set_local_ver(self, ver: str):

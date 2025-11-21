@@ -13,7 +13,14 @@ from zhenxun.utils.manager.virtual_env_package_manager import VirtualEnvPackageM
 
 from .config import LOG_COMMAND, PLUGIN_FLODER, PLUGIN_INDEX
 from .models import StorePluginInfo
-from .utils import Plugin, copy2, get_whl_download_url, path_mkdir, path_rm
+from .utils import (
+    Plugin,
+    copy2,
+    get_whl_download_url,
+    init_ver_data,
+    path_mkdir,
+    path_rm,
+)
 
 
 def sort_plugins_by(
@@ -119,6 +126,7 @@ class StoreManager:
         nb_plugin_map = {p.module_name: p for p in nb_plugins}
 
         suc_plugin: dict[str, str] = {}
+        await init_ver_data()
         for module in loaded_modules:
             plugin_info = nb_plugin_map.get(module)
             if not plugin_info:
@@ -198,7 +206,7 @@ class StoreManager:
         return await cls.get_nb_plugins()
 
     @classmethod
-    async def version_check(cls, plugin_info: StorePluginInfo):
+    def version_check(cls, plugin_info: StorePluginInfo):
         """版本检查
 
         参数:
