@@ -310,7 +310,7 @@ class Plugin:
         self.ver = plugin_info.version
         """插件最新版本号"""
 
-    async def get_local_ver(self) -> str:
+    def get_local_ver(self) -> str:
         """获取插件的本地版本号"""
         return PLUGIN_VER_DATA.get(self.pkg_name, "?")
 

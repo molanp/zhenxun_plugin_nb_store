@@ -131,7 +131,7 @@ class StoreManager:
             plugin_info = nb_plugin_map.get(module)
             if not plugin_info:
                 continue
-            local_ver = await Plugin(plugin_info).get_local_ver()
+            local_ver =  Plugin(plugin_info).get_local_ver()
             suc_plugin[module] = local_ver or "Unknown"
 
         return suc_plugin
