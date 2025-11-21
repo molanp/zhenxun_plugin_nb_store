@@ -10,15 +10,24 @@ import sys
 from urllib.parse import urljoin
 import zipfile
 
+import aiofiles
 from nonebot.utils import run_sync
-from nonebot_plugin_alconna import UniMessage
 from packaging.requirements import Requirement
 from packaging.version import parse as parse_version
+import ujson
 
+from zhenxun.configs.path_config import DATA_PATH as BASE_PATH
 from zhenxun.services.log import logger
 from zhenxun.utils.http_utils import AsyncHttpx
 
 from .config import LOG_COMMAND
+from .models import StorePluginInfo
+
+DATA_PATH = BASE_PATH / "nb_store"
+DATA_PATH.mkdir(parents=True, exist_ok=True)
+
+PLUGIN_VER_DATA: dict[str, str] = {}
+PLUGIN_VER_LOCK = asyncio.Lock()
 
 
 class SimpleIndexParser(html.parser.HTMLParser):
@@ -63,26 +72,38 @@ def open_zip(whl_bytes):
 
 
 @run_sync
-def zip_namelist(zf):
+def zip_namelist(zf: zipfile.ZipFile):
+    """获取zip文件中的文件列表"""
     return zf.namelist()
 
 
 @run_sync
-def zip_read(zf, filename):
+def zip_read(zf: zipfile.ZipFile, filename: str):
+    """读取zip文件中的文件(相对路径)"""
     return zf.read(filename)
 
 
-@run_sync
 def path_mkdir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
 
 
 @run_sync
-def path_rm(path: Path):
-    shutil.rmtree(path)
+def path_rm(path: Path) -> None:
+    """
+    删除目录或文件。如果路径不存在则静默返回
+    """
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+    except FileNotFoundError:
+        # 忽略路径不存在的情况
+        return
 
 
-async def get_record_files(zf):
+async def get_record_files(zf: zipfile.ZipFile):
+    """从RECORD文件中获取包文件列表"""
     namelist = await zip_namelist(zf)
     record_file = next(
         (
@@ -95,15 +116,17 @@ async def get_record_files(zf):
     if not record_file:
         raise FileNotFoundError("找不到RECORD文件")
     record_data = await zip_read(zf, record_file)
-    records = []
+    records: list[str] = []
     for line in record_data.decode("utf-8").splitlines():
         reader = csv.reader([line])
+        """CSV结构: path, hash, size"""
         if row := next(reader):
             records.append(row[0])
     return records
 
 
-async def get_dependencies_from_metadata(zf) -> list[str]:
+async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
+    """从METADATA文件中获取依赖列表"""
     namelist = await zip_namelist(zf)
     metadata_file = next(
         (f for f in namelist if f.endswith("METADATA") and ".dist-info/" in f),
@@ -124,7 +147,8 @@ async def get_dependencies_from_metadata(zf) -> list[str]:
     return dependencies
 
 
-async def extract_code_from_record(zf, dest_dir: Path):
+async def extract_code_from_whl(zf: zipfile.ZipFile, dest_dir: Path):
+    """从WHL文件中提取代码文件"""
     records = await get_record_files(zf)
     code_files = [
         f
@@ -134,16 +158,13 @@ async def extract_code_from_record(zf, dest_dir: Path):
     for file in code_files:
         data = await zip_read(zf, file)
         dest_path = dest_dir / file
-        await path_mkdir(dest_path.parent)
-        f = await run_sync(open)(dest_path, "wb")
-        try:
-            await run_sync(f.write)(data)
-        finally:
-            await run_sync(f.close)()
-    return code_files
+        path_mkdir(dest_path.parent)
+        async with aiofiles.open(dest_path, "wb") as f:
+            await f.write(data)
 
 
 async def get_pip_index_url() -> str:
+    """获取pip的索引地址"""
     with contextlib.suppress(Exception):
         result = await asyncio.to_thread(
             subprocess.run,
@@ -171,10 +192,13 @@ async def get_pip_index_url() -> str:
 
 
 async def get_latest_whl_url_from_simple(package: str, index_url: str) -> str | None:
+    """从索引地址中获取最新的whl文件的下载地址"""
+    if not index_url.endswith("/"):
+        index_url += "/"
     url = urljoin(index_url, package.replace("_", "-").lower())
     if not url.endswith("/"):
         url += "/"
-    html = await AsyncHttpx.get(url, timeout=10, headers={"User-Agent": "pip"})
+    html = await AsyncHttpx.get(url, timeout=10, headers={"User-Agent": "pip/25.0.0"})
     parser = SimpleIndexParser()
     parser.feed(html.text)
     whl_links = parser.links
@@ -196,7 +220,11 @@ async def get_whl_download_url(package: str) -> str | None:
 
     index_url = await get_pip_index_url()
     if "pypi.tuna.tsinghua.edu.cn" in index_url:
-        await UniMessage("你正在使用清华大学镜像源，可能会导致 403 问题").send()
+        logger.warning(
+            "为避免清华pip的403错误，已自动切换为阿里云镜像。请及时更换镜像源配置",
+            LOG_COMMAND,
+        )
+        index_url = "https://mirrors.aliyun.com/pypi/simple"
     return await get_latest_whl_url_from_simple(package, index_url)
 
 
@@ -238,25 +266,73 @@ def move_contents_up_one_level(target_dir: Path) -> None:
         target_dir.rmdir()
 
 
-async def copy2_return_deps(whl_bytes: bytes, dest_path: Path) -> list[str]:
+async def copy2(whl_bytes: bytes, target_path: Path) -> None:
     """
-    提取whl文件中的代码文件夹复制到指定目录，并返回依赖列表
+    将 wheel/zip 内容解压到 target_path，并在 target_path 中写入 requirements.txt
+      - 解压文件内容到 target_path
+      - 如果包内有 requirements 文件将其写入 target_path/requirements.txt
 
-    参数:
-        :whl_bytes: whl文件的字节流
-        :dest_dir: 目标目录
-
-    返回:
-        :list: 依赖列表
     """
-    await path_mkdir(dest_path)
+    path_mkdir(target_path)
     zf = await open_zip(whl_bytes)
     try:
-        await extract_code_from_record(zf, dest_path)
+        await extract_code_from_whl(zf, target_path)
         deps = await get_dependencies_from_metadata(zf)
     finally:
         await run_sync(zf.close)()
-    if not (dest_path / "__init__.py").exists():
-        logger.warning(f"{dest_path} 不是一个有效的插件目录，正在修复...", LOG_COMMAND)
-        await move_contents_up_one_level(dest_path)
-    return deps
+    if not (target_path / "__init__.py").exists():
+        logger.warning(
+            f"{target_path} 不是一个有效的插件目录，正在修复...", LOG_COMMAND
+        )
+        await move_contents_up_one_level(target_path)
+    if deps:
+        async with aiofiles.open(
+            target_path / "requirements.txt",
+            "w",
+            encoding="utf-8",
+        ) as f:
+            for dep in deps:
+                await f.write(dep + "\n")
+
+
+async def init_ver_data():
+    global PLUGIN_VER_DATA
+    async with PLUGIN_VER_LOCK:
+        # Double-check under lock to avoid redundant I/O under concurrency
+        if not PLUGIN_VER_DATA and (DATA_PATH / "plugin_ver.json").exists():
+            async with aiofiles.open(DATA_PATH / "plugin_ver.json") as f:
+                PLUGIN_VER_DATA = ujson.loads(await f.read())
+        return PLUGIN_VER_DATA
+
+
+class Plugin:
+    """插件信息操作类"""
+
+    def __init__(self, plugin_info: StorePluginInfo):
+        self.pkg_name = plugin_info.project_link
+        self.ver = plugin_info.version
+        """插件最新版本号"""
+
+    def get_local_ver(self) -> str | None:
+        """获取插件的本地版本号"""
+        return PLUGIN_VER_DATA.get(self.pkg_name)
+
+    async def set_local_ver(self, ver: str):
+        """设置插件的本地号版本"""
+        global PLUGIN_VER_DATA
+        async with PLUGIN_VER_LOCK:
+            PLUGIN_VER_DATA[self.pkg_name] = ver
+            await self.write()
+
+    async def remove_local_ver(self):
+        """移除插件的本地版本号"""
+        global PLUGIN_VER_DATA
+        async with PLUGIN_VER_LOCK:
+            PLUGIN_VER_DATA.pop(self.pkg_name, None)
+            await self.write()
+
+    async def write(self):
+        async with aiofiles.open(
+            DATA_PATH / "plugin_ver.json", "w", encoding="utf-8"
+        ) as f:
+            await f.write(ujson.dumps(PLUGIN_VER_DATA, ensure_ascii=False, indent=2))
