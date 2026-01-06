@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import re
 from urllib.parse import urljoin
 import zipfile
 
@@ -28,6 +29,8 @@ DATA_PATH.mkdir(parents=True, exist_ok=True)
 
 PLUGIN_VER_DATA: dict[str, str] = {}
 PLUGIN_VER_LOCK = asyncio.Lock()
+
+CONFLICTING_DEPS_PATTERN = re.compile(r"nonebot[._-]plugin[._-]orm", re.IGNORECASE)
 
 
 class SimpleIndexParser(html.parser.HTMLParser):
@@ -135,15 +138,32 @@ async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
     if not metadata_file:
         return []
     data = await zip_read(zf, metadata_file)
-    dependencies = []
-    for line in data.decode("utf-8", errors="ignore").splitlines():
-        if line.startswith("Requires-Dist:"):
-            dep_str = line[len("Requires-Dist:") :].strip()
-            try:
-                req = Requirement(dep_str)
-                dependencies.append(format_req_for_pip(req))
-            except Exception:
-                dependencies.append(dep_str)
+    decoded_data = data.decode("utf-8", errors="ignore")
+    # 依赖冲突检查
+    if CONFLICTING_DEPS_PATTERN.search(decoded_data):
+        raise RuntimeError("该插件的依赖文件中发现与真寻冲突的依赖, 已阻止本次安装")
+    dependencies: list[str] = []
+    prefix = "Requires-Dist:"
+    prefix_len = len(prefix)
+    RequirementCls = Requirement
+    format_req = format_req_for_pip
+    append_dep = dependencies.append
+
+    for line in decoded_data.splitlines():
+        line = line.strip()
+        if not line.startswith(prefix):
+            continue
+
+        dep_str = line[prefix_len:].strip()
+        if not dep_str:
+            continue
+
+        try:
+            req = RequirementCls(dep_str)
+        except Exception:
+            append_dep(dep_str)
+        else:
+            append_dep(format_req(req))
     return dependencies
 
 
