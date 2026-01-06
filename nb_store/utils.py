@@ -129,7 +129,7 @@ async def get_record_files(zf: zipfile.ZipFile):
 
 
 async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
-    """从METADATA文件中获取依赖列表"""
+    """从METADATA文件中获取依赖列表（并在依赖层面检查冲突）"""
     namelist = await zip_namelist(zf)
     metadata_file = next(
         (f for f in namelist if f.endswith("METADATA") and ".dist-info/" in f),
@@ -139,15 +139,9 @@ async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
         return []
     data = await zip_read(zf, metadata_file)
     decoded_data = data.decode("utf-8", errors="ignore")
-    # 依赖冲突检查
-    if CONFLICTING_DEPS_PATTERN.search(decoded_data):
-        raise RuntimeError("该插件的依赖文件中发现与真寻冲突的依赖, 已阻止本次安装")
     dependencies: list[str] = []
     prefix = "Requires-Dist:"
     prefix_len = len(prefix)
-    RequirementCls = Requirement
-    format_req = format_req_for_pip
-    append_dep = dependencies.append
 
     for line in decoded_data.splitlines():
         line = line.strip()
@@ -157,13 +151,16 @@ async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
         dep_str = line[prefix_len:].strip()
         if not dep_str:
             continue
-
+        if conflict_match := CONFLICTING_DEPS_PATTERN.search(dep_str):
+            raise RuntimeError(f"该插件的依赖文件中发现与真寻冲突的依赖({conflict_match.group(0)}), 已阻止本次安装")
         try:
-            req = RequirementCls(dep_str)
+            req = Requirement(dep_str)
+            formatted = format_req_for_pip(req)
         except Exception:
-            append_dep(dep_str)
-        else:
-            append_dep(format_req(req))
+            formatted = dep_str
+
+        dependencies.append(formatted)
+
     return dependencies
 
 
