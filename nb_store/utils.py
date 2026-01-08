@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import re
 from urllib.parse import urljoin
 import zipfile
 
@@ -28,6 +29,8 @@ DATA_PATH.mkdir(parents=True, exist_ok=True)
 
 PLUGIN_VER_DATA: dict[str, str] = {}
 PLUGIN_VER_LOCK = asyncio.Lock()
+
+CONFLICTING_DEPS_PATTERN = re.compile(r"nonebot[._-]plugin[._-]orm", re.IGNORECASE)
 
 
 class SimpleIndexParser(html.parser.HTMLParser):
@@ -126,7 +129,7 @@ async def get_record_files(zf: zipfile.ZipFile):
 
 
 async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
-    """从METADATA文件中获取依赖列表"""
+    """从METADATA文件中获取依赖列表（并在依赖层面检查冲突）"""
     namelist = await zip_namelist(zf)
     metadata_file = next(
         (f for f in namelist if f.endswith("METADATA") and ".dist-info/" in f),
@@ -135,15 +138,29 @@ async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
     if not metadata_file:
         return []
     data = await zip_read(zf, metadata_file)
-    dependencies = []
-    for line in data.decode("utf-8", errors="ignore").splitlines():
-        if line.startswith("Requires-Dist:"):
-            dep_str = line[len("Requires-Dist:") :].strip()
-            try:
-                req = Requirement(dep_str)
-                dependencies.append(format_req_for_pip(req))
-            except Exception:
-                dependencies.append(dep_str)
+    decoded_data = data.decode("utf-8", errors="ignore")
+    dependencies: list[str] = []
+    prefix = "Requires-Dist:"
+    prefix_len = len(prefix)
+
+    for line in decoded_data.splitlines():
+        line = line.strip()
+        if not line.startswith(prefix):
+            continue
+
+        dep_str = line[prefix_len:].strip()
+        if not dep_str:
+            continue
+        if conflict_match := CONFLICTING_DEPS_PATTERN.search(dep_str):
+            raise RuntimeError(f"该插件的依赖文件中发现与真寻冲突的依赖({conflict_match.group(0)}), 已阻止本次安装")
+        try:
+            req = Requirement(dep_str)
+            formatted = format_req_for_pip(req)
+        except Exception:
+            formatted = dep_str
+
+        dependencies.append(formatted)
+
     return dependencies
 
 
