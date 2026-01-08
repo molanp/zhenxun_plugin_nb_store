@@ -75,10 +75,7 @@ async def common_install_plugin(plugin_info: StorePluginInfo):
     down_url = await get_whl_download_url(plugin_info.project_link)
     if not down_url:
         raise FileNotFoundError(f"插件 {plugin_info.name} 未找到安装包...")
-    if plugin_obj := await PluginInfo.get_plugin(module=plugin_info.module_name):
-        target_path = Path(plugin_obj.module_path.replace(".", "/").lstrip("/"))
-    else:
-        target_path = PLUGIN_FLODER / plugin_info.module_name
+    target_path = PLUGIN_FLODER / plugin_info.module_name
     whl_data = await AsyncHttpx.get(down_url)
     await path_rm(target_path)
     path_mkdir(target_path)
@@ -120,7 +117,8 @@ class StoreManager:
             return cls.suc_plugin
 
         loaded_modules: list[str] = await PluginInfo.filter(
-            load_status=True
+            load_status=True,
+            module_path__startswith="nonebot_plugins."
         ).values_list("module", flat=True)  # type: ignore
         nb_plugins = await cls.get_data()
         nb_plugin_map = {p.module_name: p for p in nb_plugins}
