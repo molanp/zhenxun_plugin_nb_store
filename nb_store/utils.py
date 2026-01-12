@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import re
+# import re
 from urllib.parse import urljoin
 import zipfile
 
@@ -30,7 +30,7 @@ DATA_PATH.mkdir(parents=True, exist_ok=True)
 PLUGIN_VER_DATA: dict[str, str] = {}
 PLUGIN_VER_LOCK = asyncio.Lock()
 
-CONFLICTING_DEPS_PATTERN = re.compile(r"nonebot[._-]plugin[._-]orm", re.IGNORECASE)
+# CONFLICTING_DEPS_PATTERN = re.compile(r"nonebot[._-]plugin[._-]orm", re.IGNORECASE)
 
 
 class SimpleIndexParser(html.parser.HTMLParser):
@@ -151,8 +151,8 @@ async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
         dep_str = line[prefix_len:].strip()
         if not dep_str:
             continue
-        if conflict_match := CONFLICTING_DEPS_PATTERN.search(dep_str):
-            raise RuntimeError(f"该插件的依赖文件中发现与真寻冲突的依赖({conflict_match.group(0)}), 已阻止本次安装")
+        # if conflict_match := CONFLICTING_DEPS_PATTERN.search(dep_str):
+        #     raise RuntimeError(f"该插件的依赖文件中发现与真寻冲突的依赖({conflict_match.group(0)}), 已阻止本次安装")
         try:
             req = Requirement(dep_str)
             formatted = format_req_for_pip(req)

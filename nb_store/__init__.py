@@ -31,7 +31,7 @@ __plugin_meta__ = PluginMetadata(
     """.strip(),
     extra=PluginExtraData(
         author="molanp",
-        version="1.0",
+        version="1.1",
         plugin_type=PluginType.SUPERUSER,
     ).to_dict(),
 )
