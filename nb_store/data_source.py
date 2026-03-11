@@ -2,7 +2,7 @@ import math
 from pathlib import Path
 
 from aiocache import cached
-import aiofiles
+import nonebot
 import ujson
 
 from zhenxun.models.plugin_info import PluginInfo
@@ -22,6 +22,8 @@ from .utils import (
     path_rm,
 )
 
+nonebot.load_plugins(str(PLUGIN_FLODER))
+
 
 def sort_plugins_by(
     plugin_list: list[StorePluginInfo], order_by: str
@@ -34,44 +36,8 @@ def sort_plugins_by(
     )
 
 
-async def inject_botpy():
-    file_path = Path() / "bot.py"
-    async with aiofiles.open(file_path, encoding="utf-8") as f:
-        lines = await f.readlines()
-
-    # 检查是否已存在目标代码
-    target_line = 'nonebot.load_plugins("nonebot_plugins")'
-    if any(target_line in line for line in lines):
-        logger.debug("已存在目标代码(加载注入)，跳过", LOG_COMMAND)
-        return
-
-    # 找到最后一个 load_plugins 调用的位置
-    last_index = -1
-    for i, line in enumerate(lines):
-        if line.strip().startswith("nonebot.load_plugins("):
-            last_index = i
-
-    if last_index == -1:
-        logger.warning(
-            "未找到 `nonebot.load_plugins` 调用，无法注入插件加载", LOG_COMMAND
-        )
-        return
-
-    # 保持相同缩进
-    indent = " " * (len(lines[last_index]) - len(lines[last_index].lstrip()))
-    new_line = f'{indent}nonebot.load_plugins("nonebot_plugins")\n'
-
-    # 插入新行
-    lines.insert(last_index + 1, new_line)
-
-    async with aiofiles.open(file_path, mode="w", encoding="utf-8") as f:
-        await f.writelines(lines)
-    logger.info("Nonebot插件加载注入成功", LOG_COMMAND)
-
-
 async def common_install_plugin(plugin_info: StorePluginInfo):
     """通用插件安装流程"""
-    await inject_botpy()
     down_url = await get_whl_download_url(plugin_info.project_link)
     if not down_url:
         raise FileNotFoundError(f"插件 {plugin_info.name} 未找到安装包...")
@@ -117,8 +83,7 @@ class StoreManager:
             return cls.suc_plugin
 
         loaded_modules: list[str] = await PluginInfo.filter(
-            load_status=True,
-            module_path__startswith="nonebot_plugins."
+            load_status=True, module_path__startswith="nonebot_plugins."
         ).values_list("module", flat=True)  # type: ignore
         nb_plugins = await cls.get_data()
         nb_plugin_map = {p.module_name: p for p in nb_plugins}
@@ -129,7 +94,7 @@ class StoreManager:
             plugin_info = nb_plugin_map.get(module)
             if not plugin_info:
                 continue
-            local_ver =  Plugin(plugin_info).get_local_ver()
+            local_ver = Plugin(plugin_info).get_local_ver()
             suc_plugin[module] = local_ver or "Unknown"
 
         return suc_plugin

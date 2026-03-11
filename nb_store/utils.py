@@ -7,7 +7,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-# import re
 from urllib.parse import urljoin
 import zipfile
 
@@ -152,7 +151,8 @@ async def get_dependencies_from_metadata(zf: zipfile.ZipFile) -> list[str]:
         if not dep_str:
             continue
         # if conflict_match := CONFLICTING_DEPS_PATTERN.search(dep_str):
-        #     raise RuntimeError(f"该插件的依赖文件中发现与真寻冲突的依赖({conflict_match.group(0)}), 已阻止本次安装")
+        #     raise RuntimeError(f"该插件的依赖文件中发现与真寻冲突的依赖
+        # ({conflict_match.group(0)}), 已阻止本次安装")
         try:
             req = Requirement(dep_str)
             formatted = format_req_for_pip(req)

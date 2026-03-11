@@ -21,17 +21,18 @@ __plugin_meta__ = PluginMetadata(
     name="Nonebot插件商店",
     description="Nonebot插件商店",
     usage="""
-    nb商店 ?页码 ?每页项数 <?-o> xx : 查看当前的nonebot 插件商店.使用参数 -o 指定排序字段
+    使用参数 -o 指定排序字段
+    nb商店 ?页码 ?每页项数 <-o> xx : 查看当前的nonebot 插件商店.
     添加nb插件 name/pypi_name     : 添加nonebot 市场插件
     移除nb插件 name/pypi_name     : 移除nonebot 市场插件
-    搜索nb插件 <任意关键字>  ?页码 ?每页项数 <?-o> xx     : 搜索nonebot 市场插件.使用参数 -o 指定排序字段
+    搜索nb插件 <任意关键字>  ?页码 ?每页项数 <-o> xx     : 搜索nonebot 市场插件.
     更新nb插件 name/pypi_name     : 更新nonebot 市场插件
-    查看可更新nb插件 ?页码 ?每页项数 <?-o> xx : 查看可更新nonebot 市场插件.使用参数 -o 指定排序字段
+    查看可更新nb插件 ?页码 ?每页项数 <-o> xx : 查看可更新nonebot 市场插件.
     更新全部nb插件          : 更新全部nonebot 市场插件
     """.strip(),
     extra=PluginExtraData(
         author="molanp",
-        version="1.1",
+        version="1.2",
         plugin_type=PluginType.SUPERUSER,
     ).to_dict(),
 )
