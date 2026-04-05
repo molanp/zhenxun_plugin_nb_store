@@ -144,7 +144,7 @@ class StoreManager:
         返回:
             list[StorePluginInfo]: 插件列表数据
         """
-        response = await AsyncHttpx.get(PLUGIN_INDEX, check_status_code=200)
+        response = await AsyncHttpx.get(PLUGIN_INDEX)
         if response.status_code == 200:
             logger.info("获取nb插件列表成功", LOG_COMMAND)
             data = []
